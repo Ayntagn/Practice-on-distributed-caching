@@ -1,0 +1,8 @@
+# RocksDB runtime database data (created by running the server)
+rocksdb-cache/rocksdb/
+
+# RocksDB third-party source + build artifacts (compile your own after clone)
+rocksdb-cache/third_party/
+
+# macOS
+.DS_Store
