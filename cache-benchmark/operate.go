@@ -30,7 +30,7 @@ func operate(id, count int, ch chan *result) {
 				name = "set"
 			}
 		}
-		c := &cacheClient.Cmd{name, key, value, nil}
+		c := &cacheClient.Cmd{Name: name, Key: key, Value: value}
 		if pipelen > 1 {
 			cmds = append(cmds, c)
 			if len(cmds) == pipelen {

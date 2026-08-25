@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"math/rand"
 	"time"
 )
 
@@ -28,8 +27,6 @@ func init() {
 	fmt.Println("operation is", operation)
 	fmt.Println("keyspacelen is", keyspacelen)
 	fmt.Println("pipeline length is", pipelen)
-
-	rand.Seed(time.Now().UnixNano())
 }
 
 func main() {

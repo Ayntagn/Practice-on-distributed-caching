@@ -9,6 +9,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"caches-core/ports"
 )
 
 type tcpClient struct {
@@ -66,23 +68,36 @@ func (c *tcpClient) recvResponse() (string, error) {
 	return string(value), nil
 }
 
+const redirectPrefix = "redirect "
+
+// followRedirect re-executes a command rejected with a
+// "redirect <addr>" error on the owner node (D1). The owner is
+// authoritative, so a single retry is enough.
+func (c *tcpClient) followRedirect(cmd *Cmd) {
+	if cmd.Error == nil || !strings.HasPrefix(cmd.Error.Error(), redirectPrefix) {
+		return
+	}
+	addr := strings.TrimPrefix(cmd.Error.Error(), redirectPrefix)
+	owner := newTCPClient(addr)
+	defer owner.Close()
+	cmd.Error = nil
+	owner.Run(cmd)
+}
+
 func (c *tcpClient) Run(cmd *Cmd) {
 	if cmd.Name == "get" {
 		c.sendGet(cmd.Key)
 		cmd.Value, cmd.Error = c.recvResponse()
-		return
-	}
-	if cmd.Name == "set" {
+	} else if cmd.Name == "set" {
 		c.sendSet(cmd.Key, cmd.Value)
 		_, cmd.Error = c.recvResponse()
-		return
-	}
-	if cmd.Name == "del" {
+	} else if cmd.Name == "del" {
 		c.sendDel(cmd.Key)
 		_, cmd.Error = c.recvResponse()
-		return
+	} else {
+		panic("unknown cmd name " + cmd.Name)
 	}
-	panic("unknown cmd name " + cmd.Name)
+	c.followRedirect(cmd)
 }
 func (c *tcpClient) PipelinedRun(cmds []*Cmd) {
 	if len(cmds) == 0 {
@@ -101,11 +116,12 @@ func (c *tcpClient) PipelinedRun(cmds []*Cmd) {
 	}
 	for _, cmd := range cmds {
 		cmd.Value, cmd.Error = c.recvResponse()
+		c.followRedirect(cmd)
 	}
 }
 
 func newTCPClient(server string) *tcpClient {
-	c, e := net.Dial("tcp", server+":12346")
+	c, e := net.Dial("tcp", server+":"+ports.TCP)
 	if e != nil {
 		panic(e)
 	}

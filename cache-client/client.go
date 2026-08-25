@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+
+	"cache-benchmark/cacheClient"
 )
 
 func main() {
@@ -12,7 +14,7 @@ func main() {
 	value := flag.String("v", "", "value")
 	flag.Parse()
 	client := cacheClient.New("tcp", *server)
-	cmd := &cacheClient.Cmd{*op, *key, *value}
+	cmd := &cacheClient.Cmd{Name: *op, Key: *key, Value: *value}
 	client.Run(cmd)
 	if cmd.Error != nil {
 		fmt.Println("error: ", cmd.Error)

@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"caches-core/ports"
 )
 
 type httpClient struct {
@@ -33,7 +35,7 @@ func (c *httpClient) get(key string) string {
 
 func (c *httpClient) set(key, value string) {
 	req, e := http.NewRequest(
-		http.MethodPost,
+		http.MethodPut,
 		c.server+key,
 		strings.NewReader(value),
 	)
@@ -71,7 +73,7 @@ func newHTTPClient(server string) *httpClient {
 	}
 	return &httpClient{
 		client,
-		"http://" + server + ":12345/cache/",
+		"http://" + server + ":" + ports.HTTP + "/cache/",
 	}
 
 }
