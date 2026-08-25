@@ -10,21 +10,20 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
-	"time"
 	"unsafe"
+
+	ccore "caches-core/cache"
 )
 
+var propRegexp = regexp.MustCompile(`([^;]+)=([^;]+);`)
+
+// rocksdbCache wraps the rocksdb C API. The db handle is safe for
+// concurrent use; each call keeps its error output in a local
+// variable so concurrent requests never race on a shared pointer.
 type rocksdbCache struct {
 	db *C.rocksdb_t
 	ro *C.rocksdb_readoptions_t
 	wo *C.rocksdb_writeoptions_t
-	e  *C.char
-	ch chan *pair
-}
-
-type pair struct {
-	k string
-	v []byte
 }
 
 func newRocksDBCache() *rocksdbCache {
@@ -37,16 +36,10 @@ func newRocksDBCache() *rocksdbCache {
 		panic(C.GoString(e))
 	}
 	C.rocksdb_options_destroy(options)
-
-	c := make(chan *pair, 5000)
-	wo := C.rocksdb_writeoptions_create()
-	go write_func(db, c, wo)
 	return &rocksdbCache{
 		db: db,
 		ro: C.rocksdb_readoptions_create(),
-		wo: wo,
-		e:  e,
-		ch: c,
+		wo: C.rocksdb_writeoptions_create(),
 	}
 }
 
@@ -54,38 +47,58 @@ func (c *rocksdbCache) Get(key string) ([]byte, error) {
 	k := C.CString(key)
 	defer C.free(unsafe.Pointer(k))
 	var length C.size_t
-	v := C.rocksdb_get(c.db, c.ro, k, C.size_t(len(key)), &length, &c.e)
-	if c.e != nil {
-		return nil, errors.New(C.GoString(c.e))
+	var e *C.char
+	v := C.rocksdb_get(c.db, c.ro, k, C.size_t(len(key)), &length, &e)
+	if e != nil {
+		defer C.free(unsafe.Pointer(e))
+		return nil, errors.New(C.GoString(e))
+	}
+	if v == nil {
+		return nil, nil
 	}
 	defer C.free(unsafe.Pointer(v))
 	return C.GoBytes(unsafe.Pointer(v), C.int(length)), nil
 }
 
+// Set writes synchronously (B1: the previous async write-batch made
+// entries invisible until flushed, so Set followed by Get missed).
+// rocksdb_put copies the value into the memtable/WAL before returning.
 func (c *rocksdbCache) Set(key string, value []byte) error {
-	c.ch <- &pair{key, value}
+	k := C.CString(key)
+	defer C.free(unsafe.Pointer(k))
+	var v *C.char
+	if len(value) > 0 {
+		v = (*C.char)(unsafe.Pointer(&value[0]))
+	}
+	var e *C.char
+	C.rocksdb_put(c.db, c.wo, k, C.size_t(len(key)), v, C.size_t(len(value)), &e)
+	if e != nil {
+		defer C.free(unsafe.Pointer(e))
+		return errors.New(C.GoString(e))
+	}
 	return nil
 }
 
 func (c *rocksdbCache) Del(key string) error {
 	k := C.CString(key)
 	defer C.free(unsafe.Pointer(k))
-	C.rocksdb_delete(c.db, c.wo, k, C.size_t(len(key)), &c.e)
-	if c.e != nil {
-		return errors.New(C.GoString(c.e))
+	var e *C.char
+	C.rocksdb_delete(c.db, c.wo, k, C.size_t(len(key)), &e)
+	if e != nil {
+		defer C.free(unsafe.Pointer(e))
+		return errors.New(C.GoString(e))
 	}
 	return nil
 }
 
-func (c *rocksdbCache) GetStat() Stat {
+func (c *rocksdbCache) GetStat() ccore.Stat {
 	k := C.CString("rocksdb.aggregated-table-properties")
 	defer C.free(unsafe.Pointer(k))
 	v := C.rocksdb_property_value(c.db, k)
 	defer C.free(unsafe.Pointer(v))
 	p := C.GoString(v)
-	r := regexp.MustCompile(`([^;]+)=([^;]+);`)
-	s := Stat{}
-	for _, submatches := range r.FindAllStringSubmatch(p, -1) {
+	s := ccore.Stat{}
+	for _, submatches := range propRegexp.FindAllStringSubmatch(p, -1) {
 		if submatches[1] == " # entries" {
 			s.Count, _ = strconv.ParseInt(submatches[2], 10, 64)
 		} else if submatches[1] == " raw key size" {
@@ -95,52 +108,4 @@ func (c *rocksdbCache) GetStat() Stat {
 		}
 	}
 	return s
-}
-
-const (
-	BATCH_SIZE = 100
-)
-
-func flush_batch(db *C.rocksdb_t, b *C.rocksdb_writebatch_t, o *C.rocksdb_writeoptions_t) {
-	var e *C.char
-	C.rocksdb_write(db, o, b, &e)
-	if e != nil {
-		panic(C.GoString(e))
-	}
-	// rocksdb_write does NOT clear the batch; contents must be cleared
-	// explicitly, otherwise entries accumulate and every flush rewrites
-	// all prior entries (quadratic write amplification).
-	C.rocksdb_writebatch_clear(b)
-}
-
-func write_func(db *C.rocksdb_t, c chan *pair, o *C.rocksdb_writeoptions_t) {
-	count := 0
-	t := time.NewTimer(time.Second)
-	b := C.rocksdb_writebatch_create()
-	defer C.rocksdb_writebatch_destroy(b)
-	for {
-		select {
-		case p := <-c:
-			count++
-			key := C.CString(p.k)
-			value := C.CBytes(p.v)
-			C.rocksdb_writebatch_put(b, key, C.size_t(len(p.k)), (*C.char)(value), C.size_t(len(p.v)))
-			C.free(unsafe.Pointer(key))
-			C.free(value)
-			if count == BATCH_SIZE {
-				flush_batch(db, b, o)
-				count = 0
-			}
-			if !t.Stop() {
-				<-t.C
-			}
-			t.Reset(time.Second)
-		case <-t.C:
-			if count != 0 {
-				flush_batch(db, b, o)
-				count = 0
-			}
-			t.Reset(time.Second)
-		}
-	}
 }

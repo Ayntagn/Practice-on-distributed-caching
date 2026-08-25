@@ -2,14 +2,16 @@ package http
 
 import (
 	"net/http"
-	"tcp-cache/cache"
+
+	ccore "caches-core/cache"
+	"caches-core/ports"
 )
 
 type Server struct {
-	cache.Cache
+	ccore.Cache
 }
 
-func New(c cache.Cache) *Server {
+func New(c ccore.Cache) *Server {
 	return &Server{
 		Cache: c,
 	}
@@ -18,7 +20,7 @@ func New(c cache.Cache) *Server {
 func (s *Server) Listen() {
 	http.Handle("/cache/", s.cacheHandler())
 	http.Handle("/status", s.statusHandler())
-	http.ListenAndServe(":12345", nil)
+	http.ListenAndServe(":"+ports.HTTP, nil)
 }
 
 func (s *Server) cacheHandler() http.Handler {

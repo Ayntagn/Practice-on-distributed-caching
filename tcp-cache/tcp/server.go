@@ -2,27 +2,27 @@ package tcp
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"log"
 	"net"
-	"strconv"
-	"strings"
-	"tcp-cache/cache"
+
+	ccore "caches-core/cache"
+	"caches-core/ports"
+	"caches-core/protocol"
 )
 
 type Server struct {
-	cache.Cache
+	ccore.Cache
 }
 
-func New(c cache.Cache) *Server {
+func New(c ccore.Cache) *Server {
 	return &Server{
 		Cache: c,
 	}
 }
 
 func (s *Server) Listen() {
-	l, e := net.Listen("tcp", ":12346")
+	l, e := net.Listen("tcp", ":"+ports.TCP)
 	if e != nil {
 		panic(e)
 	}
@@ -35,92 +35,9 @@ func (s *Server) Listen() {
 	}
 }
 
-func (s *Server) readKey(r *bufio.Reader) (string, error) {
-	klen, e := readLen(r)
-	if e != nil {
-		return "", e
-	}
-	k := make([]byte, klen)
-	_, e = io.ReadFull(r, k)
-	if e != nil {
-		return "", e
-	}
-	return string(k), nil
-}
-
-func (s *Server) readKeyAndValue(r *bufio.Reader) (string, []byte, error) {
-	klen, e := readLen(r)
-	if e != nil {
-		return "", nil, e
-	}
-	vlen, e := readLen(r)
-	if e != nil {
-		return "", nil, e
-	}
-	k := make([]byte, klen)
-	_, e = io.ReadFull(r, k)
-	if e != nil {
-		return "", nil, e
-	}
-	v := make([]byte, vlen)
-	_, e = io.ReadFull(r, v)
-	if e != nil {
-		return "", nil, e
-	}
-	return string(k), v, nil
-}
-
-func readLen(r *bufio.Reader) (int, error) {
-	tmp, e := r.ReadString(' ')
-	if e != nil {
-		return 0, e
-	}
-	l, e := strconv.Atoi(strings.TrimSpace(tmp))
-	if e != nil {
-		return 0, e
-	}
-	return l, nil
-}
-
-func sendResponse(value []byte, err error, conn net.Conn) error {
-	if err != nil {
-		errString := err.Error()
-		tmp := fmt.Sprintf("-%d ", len(errString)) + errString
-		_, e := conn.Write([]byte(tmp))
-		return e
-	}
-	vlen := fmt.Sprintf("%d ", len(value))
-	_, e := conn.Write(append([]byte(vlen), value...))
-	return e
-}
-
-func (s *Server) get(conn net.Conn, r *bufio.Reader) error {
-	k, e := s.readKey(r)
-	if e != nil {
-		return e
-	}
-	v, e := s.Get(k)
-	return sendResponse(v, e, conn)
-}
-
-func (s *Server) set(conn net.Conn, r *bufio.Reader) error {
-	k, v, e := s.readKeyAndValue(r)
-	if e != nil {
-		return e
-	}
-	e = s.Set(k, v)
-	return sendResponse(nil, e, conn)
-}
-
-func (s *Server) del(conn net.Conn, r *bufio.Reader) error {
-	k, e := s.readKey(r)
-	if e != nil {
-		return e
-	}
-	e = s.Del(k)
-	return sendResponse(nil, e, conn)
-}
-
+// Serial protocol processing: each command is read, applied and
+// answered before the next one is parsed (no pipelining here, unlike
+// the rocksdb/distributedCache variants).
 func (s *Server) process(conn net.Conn) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
@@ -148,4 +65,31 @@ func (s *Server) process(conn net.Conn) {
 			return
 		}
 	}
+}
+
+func (s *Server) get(conn net.Conn, r *bufio.Reader) error {
+	k, e := protocol.ReadKey(r)
+	if e != nil {
+		return e
+	}
+	v, e := s.Get(k)
+	return protocol.SendResponse(v, e, conn)
+}
+
+func (s *Server) set(conn net.Conn, r *bufio.Reader) error {
+	k, v, e := protocol.ReadKeyAndValue(r)
+	if e != nil {
+		return e
+	}
+	e = s.Set(k, v)
+	return protocol.SendResponse(nil, e, conn)
+}
+
+func (s *Server) del(conn net.Conn, r *bufio.Reader) error {
+	k, e := protocol.ReadKey(r)
+	if e != nil {
+		return e
+	}
+	e = s.Del(k)
+	return protocol.SendResponse(nil, e, conn)
 }

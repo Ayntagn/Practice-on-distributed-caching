@@ -1,18 +1,18 @@
 package cache
 
-import "log"
+import (
+	"log"
 
-type Cache interface {
-	Set(string, []byte) error
-	Get(string) ([]byte, error)
-	Del(string) error
-	GetStat() Stat
-}
+	ccore "caches-core/cache"
+)
 
-func New(typ string) Cache {
-	var c Cache
+// New returns the cache implementation for typ. The in-memory
+// implementation lives in caches-core; this local package keeps the
+// factory signature stable for callers across modules.
+func New(typ string) ccore.Cache {
+	var c ccore.Cache
 	if typ == "inmemory" {
-		c = newInMemoryCache()
+		c = ccore.NewMemory()
 	}
 	if c == nil {
 		panic("unknown cache type: " + typ)

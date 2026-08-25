@@ -2,4 +2,6 @@ module rocksdb-cache
 
 go 1.26.3
 
-require github.com/linxGnu/grocksdb v1.10.8 // indirect
+require caches-core v0.0.0
+
+replace caches-core => ../caches-core
