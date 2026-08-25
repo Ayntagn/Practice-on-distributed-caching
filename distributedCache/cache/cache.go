@@ -1,23 +1,22 @@
 package cache
 
-import "log"
+import (
+	"log"
 
-type Cache interface {
-	Set(string, []byte) error
-	Get(string) ([]byte, error)
-	Del(string) error
-	GetStat() Stat
-}
+	ccore "caches-core/cache"
+)
 
-func New(typ string) Cache {
-	var c Cache
-	if typ == "inmemory" {
-		c = newInMemoryCache()
-	}
-	if typ == "rocksdb" {
+// New returns the cache implementation for typ ("inmemory" or "rocksdb").
+// The in-memory implementation lives in caches-core; the rocksdb one is
+// module-local because it links against this module's third_party build.
+func New(typ string) ccore.Cache {
+	var c ccore.Cache
+	switch typ {
+	case "inmemory":
+		c = ccore.NewMemory()
+	case "rocksdb":
 		c = newRocksDBCache()
-	}
-	if c == nil {
+	default:
 		panic("unknown cache type: " + typ)
 	}
 	log.Println(typ, "ready to serve")
