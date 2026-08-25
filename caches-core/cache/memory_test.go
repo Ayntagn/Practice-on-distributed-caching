@@ -1,8 +1,10 @@
 package cache
 
 import (
+	"bytes"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestMemorySetGet(t *testing.T) {
@@ -62,6 +64,64 @@ func TestMemoryGetStat(t *testing.T) {
 	}
 }
 
+func TestMemoryScannerWalksAllEntries(t *testing.T) {
+	c := NewMemory()
+	entries := map[string][]byte{
+		"a": []byte("1"),
+		"b": []byte("22"),
+		"c": []byte("333"),
+	}
+	for k, v := range entries {
+		if e := c.Set(k, v); e != nil {
+			t.Fatal(e)
+		}
+	}
+	s := c.NewScanner()
+	defer s.Close()
+	seen := map[string][]byte{}
+	for s.Scan() {
+		seen[s.Key()] = s.Value()
+	}
+	if len(seen) != len(entries) {
+		t.Fatalf("scanned %d entries, want %d", len(seen), len(entries))
+	}
+	for k, v := range entries {
+		if !bytes.Equal(seen[k], v) {
+			t.Fatalf("key %q = %q, want %q", k, seen[k], v)
+		}
+	}
+}
+
+func TestMemoryScannerEmptyCache(t *testing.T) {
+	c := NewMemory()
+	s := c.NewScanner()
+	defer s.Close()
+	if s.Scan() {
+		t.Fatal("empty cache should scan zero entries")
+	}
+}
+
+// TestMemoryScannerCloseStopsEarly guards the cancellation path: after
+// Close the scan goroutine must terminate and Scan must eventually return
+// false without blocking the caller. At most one in-flight pair may still
+// be delivered before the goroutine observes the closed channel.
+func TestMemoryScannerCloseStopsEarly(t *testing.T) {
+	c := NewMemory()
+	for i := 0; i < 100; i++ {
+		c.Set(string(rune('a'+i%26)), []byte{byte(i)})
+	}
+	s := c.NewScanner()
+	s.Close()
+	deadline := time.After(1 * time.Second)
+	for s.Scan() {
+		select {
+		case <-deadline:
+			t.Fatal("Scan kept returning true after Close")
+		default:
+		}
+	}
+}
+
 // TestMemoryConcurrent hammers the cache from many goroutines; run with
 // -race to catch the shared-state races the original had.
 func TestMemoryConcurrent(t *testing.T) {
@@ -72,7 +132,7 @@ func TestMemoryConcurrent(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < 500; j++ {
-				key := string(rune('a' + id)) + string(rune('a' + j%26))
+				key := string(rune('a'+id)) + string(rune('a'+j%26))
 				value := []byte{byte(j)}
 				if j%3 == 0 {
 					c.Set(key, value)
