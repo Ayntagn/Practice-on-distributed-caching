@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"caches-core/ports"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -28,19 +29,16 @@ func (r *redisClient) del(key string) error {
 }
 
 func (r *redisClient) Run(c *Cmd) {
-	if c.Name == "get" {
+	switch c.Name {
+	case "get":
 		c.Value, c.Error = r.get(c.Key)
-		return
-	}
-	if c.Name == "set" {
+	case "set":
 		c.Error = r.set(c.Key, c.Value)
-		return
-	}
-	if c.Name == "del" {
+	case "del":
 		c.Error = r.del(c.Key)
-		return
+	default:
+		panic("unknown cmd name " + c.Name)
 	}
-	panic("unknown cmd name " + c.Name)
 }
 
 func (r *redisClient) PipelinedRun(cmds []*Cmd) {

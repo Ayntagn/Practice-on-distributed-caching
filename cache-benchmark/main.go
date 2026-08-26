@@ -13,7 +13,7 @@ func init() {
 	flag.StringVar(&typ, "type", "redis", "cache server type")
 	flag.StringVar(&server, "h", "localhost", "cache server address")
 	flag.IntVar(&total, "n", 1000, "total number of requests")
-	flag.IntVar(&valueSize, "d", 1000, "data size of SET/GET value iin bytes")
+	flag.IntVar(&valueSize, "d", 1000, "data size of SET/GET value in bytes")
 	flag.IntVar(&threads, "c", 1, "number of parallel connections")
 	flag.StringVar(&operation, "t", "set", "test set, could be get/set/mixed")
 	flag.IntVar(&keyspacelen, "r", 0, "keyspacelen, use random keys from 0 to keyspacelen-1")
@@ -40,7 +40,7 @@ func main() {
 		res.addResult(<-ch)
 	}
 
-	d := time.Now().Sub(start)
+	d := time.Since(start)
 	totalCount := res.getCount + res.missCount + res.setCount
 	fmt.Printf("%d records get\n", res.getCount)
 	fmt.Printf("%d records miss\n", res.missCount)
