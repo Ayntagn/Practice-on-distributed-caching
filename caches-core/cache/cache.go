@@ -24,5 +24,9 @@ type Scanner interface {
 
 // NewMemory returns an in-memory cache.
 func NewMemory() Cache {
-	return newInMemoryCache()
+	return newInMemoryCache(0)
+}
+
+func NewMemoryWithTTL(ttl int) Cache {
+	return newInMemoryCache(ttl)
 }
