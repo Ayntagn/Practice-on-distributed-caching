@@ -85,20 +85,22 @@ func (c *tcpClient) followRedirect(cmd *Cmd) {
 }
 
 func (c *tcpClient) Run(cmd *Cmd) {
-	if cmd.Name == "get" {
+	switch cmd.Name {
+	case "get":
 		c.sendGet(cmd.Key)
 		cmd.Value, cmd.Error = c.recvResponse()
-	} else if cmd.Name == "set" {
+	case "set":
 		c.sendSet(cmd.Key, cmd.Value)
 		_, cmd.Error = c.recvResponse()
-	} else if cmd.Name == "del" {
+	case "del":
 		c.sendDel(cmd.Key)
 		_, cmd.Error = c.recvResponse()
-	} else {
+	default:
 		panic("unknown cmd name " + cmd.Name)
 	}
 	c.followRedirect(cmd)
 }
+
 func (c *tcpClient) PipelinedRun(cmds []*Cmd) {
 	if len(cmds) == 0 {
 		return

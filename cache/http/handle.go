@@ -92,5 +92,4 @@ func (h *statusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if _, e := w.Write(b); e != nil {
 		log.Println(e)
 	}
-
 }
