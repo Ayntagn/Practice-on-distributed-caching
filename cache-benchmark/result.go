@@ -29,11 +29,12 @@ func (r *result) addStatistic(bucket int, stat statistic) {
 func (r *result) addDuration(d time.Duration, typ string) {
 	bucket := int(d / time.Millisecond)
 	r.addStatistic(bucket, statistic{1, d})
-	if typ == "get" {
+	switch typ {
+	case "get":
 		r.getCount++
-	} else if typ == "set" {
+	case "set":
 		r.setCount++
-	} else {
+	default:
 		r.missCount++
 	}
 }

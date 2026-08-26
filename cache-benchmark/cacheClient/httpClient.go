@@ -54,13 +54,12 @@ func (c *httpClient) set(key, value string) {
 }
 
 func (c *httpClient) Run(cmd *Cmd) {
-	if cmd.Name == "get" {
+	switch cmd.Name {
+	case "get":
 		cmd.Value = c.get(cmd.Key)
-		return
-	} else if cmd.Name == "set" {
+	case "set":
 		c.set(cmd.Key, cmd.Value)
-		return
-	} else {
+	default:
 		panic("unknown cmd name " + cmd.Name)
 	}
 }
@@ -75,7 +74,6 @@ func newHTTPClient(server string) *httpClient {
 		client,
 		"http://" + server + ":" + ports.HTTP + "/cache/",
 	}
-
 }
 
 func (c *httpClient) PipelinedRun([]*Cmd) {
